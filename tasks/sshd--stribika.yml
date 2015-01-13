@@ -1,0 +1,70 @@
+---
+# ----------------------------------------------------------------------------------------------------
+# Secure SSHD from @stribika https://stribika.github.io/2015/01/04/secure-secure-shell.html
+- name: Make OpenSSH secure(r)
+  sudo: yes
+  lineinfile: dest={{ sshd_config }} state=present regexp='^#?[ \t]*{{ item.key }}' line='{{ item.key }} {{ item.value }}'
+  with_items:
+    - { key: 'PermitEmptyPasswords',   value: 'no'}
+    - { key: 'PermitRootLogin',        value: 'no'}
+#    - { key: 'X11Forwarding',          value: 'no'}
+#    - { key: 'PasswordAuthentication', value: 'no'}
+    - { key: 'UsePAM',                 value: 'yes'}
+    - { key: 'GSSAPIAuthentication',   value: 'no'}
+  notify: restart sshd
+
+- name: Allow some stuff
+  sudo: yes
+  lineinfile: state=present dest={{ sshd_config }} regexp='^#?[ \t]*{{ item.key }}' line='{{ item.key }} {{ item.value }}'
+  with_items:
+    - { key: 'X11Forwarding',          value: 'yes'}
+    - { key: 'PasswordAuthentication', value: 'yes'}
+  notify: restart sshd
+
+# ----------------------------------------------------------------------------------------------------
+# Secure SSHD from @stribika https://stribika.github.io/2015/01/04/secure-secure-shell.html
+- name: OpenSSH allow only very strong crypto
+  sudo: yes
+  lineinfile: state=present dest={{ sshd_config }}  regexp='^#?[ \t]*{{ item.key }}' line='{{ item.key }} {{ item.value }}'
+  with_items:
+    - { key: 'Protocol',      value: '2'}
+    - { key: 'KexAlgorithms', value: 'curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256'}
+    - { key: 'Ciphers',       value: 'chacha20-poly1305@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr'}
+    - { key: 'MACs',          value: 'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-ripemd160-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,hmac-ripemd160,umac-128@openssh.com'}
+  notify: restart sshd
+
+# ----------------------------------------------------------------------------------------------------
+# Secure SSHD from @stribika https://stribika.github.io/2015/01/04/secure-secure-shell.html
+- name: OpenSSH authentication: cleanup sshd_config
+  sudo: yes
+  lineinfile: state=absent dest={{ sshd_config }}  regexp='^#?[ \t]*{{ item.key }}'
+  with_items:
+    - { key: 'HostKey' }
+  notify: restart sshd
+
+- name: OpenSSH authentication: cleanup host keys
+  sudo: yes
+  file: state=absent path=/etc/ssh/ssh_host_*key*
+  notify: restart sshd
+
+- name: OpenSSH authentication: regenerate strong host keys (RSA 4096)
+  sudo: yes
+  shell: ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key < /dev/null
+  notify: restart sshd
+
+- name: OpenSSH authentication: regenerate strong host keys (ED25519)
+  sudo: yes
+  shell: ssh-keygen -t ed25519 -f ssh_host_ed25519_key < /dev/null
+  notify: restart sshd
+
+# ----------------------------------------------------------------------------------------------------  
+## for systems that already have /etc/ssh/moduli
+#
+# awk 'int($5)>1024' /etc/ssh/moduli > /tmp/moduli.not1024
+# cp /tmp/moduli.not1024  /etc/ssh/moduli --backup=numbered
+#
+## Way too sloow
+# ssh-keygen -G "/tmp/moduli.4096.new" -b 4096
+# ssh-keygen -T /etc/ssh/moduli -f "/tmp/moduli.4096.new"
+# rm "/tmp/moduli.4096.new"
+  

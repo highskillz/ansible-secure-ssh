@@ -1,23 +1,59 @@
 ---
 - name: Add identity key to authorized keys on host
-  authorized_key: user={{ ssh_user }}
-    key="{{ lookup('file', ssh_identity_key) }}"
+  authorized_key: user={{ ssh_user }}  key="{{ lookup('file', ssh_identity_key) }}"
   register: add_identity_key
   when: ssh_identity_key is defined and ssh_user is defined
 
-- name: Disable empty password login
-  lineinfile: dest={{ sshd_config }} regexp="^#?PermitEmptyPasswords" line="PermitEmptyPasswords no"
-  notify: restart sshd
-
-- name: Disable remote root login
-  lineinfile: dest={{ sshd_config }} regexp="^#?PermitRootLogin" line="PermitRootLogin no"
-  notify: restart sshd
-
 - name: Disable password login
-  lineinfile: dest={{ sshd_config }} regexp="^#?PasswordAuthentication" line="PasswordAuthentication no"
+  lineinfile: dest={{ sshd_config }} state=present regexp='^#?[ \t]*{{ item.key }}' line='{{ item.key }} {{ item.value }}'
+  with_items:
+    - { key: 'PasswordAuthentication', value: 'no'}
   when: add_identity_key|success and not add_identity_key|skipped
   notify: restart sshd
 
 - name: Enable PAM
   lineinfile: dest={{ sshd_config }} regexp="^#?UsePAM" line="UsePAM yes"
   notify: restart sshd
+
+# idiom from @yauth https://github.com/yauh/role-hardening/blob/master/tasks/hardening_debian.yml
+- name: Make OpenSSH secure(r)
+  lineinfile: dest={{ sshd_config }} state=present regexp='^#?[ \t]*{{ item.key }}' line='{{ item.key }} {{ item.value }}'
+  with_items:
+    - { key: 'PermitEmptyPasswords',   value: 'no'}
+    - { key: 'PermitRootLogin',        value: 'no'}
+    - { key: 'X11Forwarding',          value: 'no'}
+  notify: restart ssh
+
+- name: OpenSSH allow only very strong crypto 
+  lineinfile:
+  lineinfile: dest={{ sshd_config }} state=present regexp='^#?[ \t]*{{ item.key }}' line='{{ item.key }} {{ item.value }}'
+  with_items:
+    # Specifies the available key exchange algorithms.
+    # 1. ECDH over Curve25519 with SHA256
+    # 2. Custom DH with SHA256 - generate primes using
+    #    ssh-keygen -G /tmp/moduli -b 4096
+    #    ssh-keygen -T /etc/ssh/moduli -f /tmp/moduli
+    #
+    - { key: 'KexAlgorithms', value: 'curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256'}
+    - { key: 'HostKey',       value: '/etc/ssh/ssh_host_ed25519_key'}
+    - { key: 'Ciphers', value: 'aes256-ctr'}
+    - { key: 'MACs', value: 'hmac-sha2-512'}
+  notify: restart ssh
+  when: hardening_strong_ciphers
+
+# Secure SSHD from @stribika https://stribika.github.io/2015/01/04/secure-secure-shell.html
+  
+- name: Secure SSH: disable protocol 1
+
+- name: Secure SSH: KexAlgorithms 
+
+- name: Secure SSH: recompute host-keys if needed
+
+- name: Secure SSH: HostKey 
+
+- name: Secure SSH: Ciphers 
+
+- name: Secure SSH: MACs
+
+- name: Secure SSH: 
+
